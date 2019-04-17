@@ -1,0 +1,107 @@
+const functions = require('firebase-functions');
+const admin = require('firebase-admin');
+const VK = require('vk-io');
+const _ = require('lodash');
+
+try { admin.initializeApp(); } catch (e) {}
+const vk = new VK();
+
+function parse(date) {
+  const pars = _.map(_.split(date, '.'), _.toNumber);
+  if (!pars[2]) { return false; }
+  const months = ['Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'June',
+    'July',
+    'Aug',
+    'Sept',
+    'Oct',
+    'Nov',
+    'Dec'];
+  const tar = Date.now() - Date.parse(`${months[pars[1] - 1]} ${pars[0]}, ${pars[2]}`);
+  return new Date().getFullYear() - new Date(tar).getFullYear();
+}
+
+function sort(obj, city = '', gender = 0, age_from = 0, age_to = 100) {
+  console.log('start', obj, city, gender, age_from, age_to);
+
+  obj = _.map(obj, (item) => {
+    item.bdate = parse(item.bdate);
+    return item;
+  });
+
+  if (city && city !== '') { obj = _.filter(obj, { city: { title: city } }); }
+  console.log('step 1', obj.length, city, gender, age_from, age_to);
+  if (gender && gender !== 0) { obj = _.filter(obj, { sex: gender }); }
+  console.log('step 2', obj.length, city, gender, age_from, age_to);
+
+  return _.filter(obj, (item) => {
+    if (item.bdate > _.toNumber(age_from) && item.bdate < _.toNumber(age_to)) { return item; }
+  });
+}
+
+function getMembers25k(token, group_id, offset) {
+  console.log(token, group_id, offset);
+  const code =
+    `var offset = ${offset * 25000};
+     var newOffset = offset;
+     var members = [];
+     while (offset < (newOffset + 25000)){
+       var m = API.groups.getMembers({
+       "group_id": ${group_id},
+       "count": "1000", 
+       "offset": offset,
+       "fields": "sex, bdate, city, country"
+       }).items;
+       members.push(m);
+       offset = offset + 1000;
+     };
+     return members;`;
+  vk.setToken(token);
+  return vk.api.call('execute', { code })
+    .then(data => _.flatten(_.compact(data.response))).catch(err => console.error(err));
+}
+
+/**
+ * @type {HttpsFunction}
+ * @param {number} uid - user id firebase
+ * @param {number} group_id - id группы
+ */
+module.exports = functions.https.onRequest(async (req, response) => {
+  const {
+    uid,
+    group_id,
+    city,
+    gender,
+    age_from,
+    age_to,
+  } = req.query;
+
+  const token = await admin.database()
+    .ref(`/users/${uid}/access_token`)
+    .once('value')
+    .then(res => res.val());
+  vk.setToken(token);
+
+  const members_count = await vk.api.call('groups.getMembers', {
+    group_id,
+    count: 0,
+  }).then(res => res.count);
+
+  const token_count = ~~(members_count / 25000) + 1;
+  const allTokens = await admin.database()
+    .ref(`/vk_access_tokens`)
+    .once('value')
+    .then(res => _.shuffle(_.toArray(res.val())));
+
+  const promises = [];
+
+  for (let i = 0; i < token_count; i++) {
+    promises.push(getMembers25k(allTokens[i], group_id, i));
+  }
+
+  Promise.all(promises).then(data => response.send(sort(data[0], city, gender, age_from, age_to)));
+});
