@@ -1,0 +1,92 @@
+const functions = require('firebase-functions');
+const VK = require('vk-io'); //версия 3.2.0
+const firebase = require('firebase');
+
+var config = {
+    apiKey: "AIzaSyDlp0Zy93ZbZ19uUjpVdSrZLb_eIp1FBS8",
+    authDomain: "parser-b501a.firebaseapp.com",
+    databaseURL: "https://parser-b501a.firebaseio.com",
+    projectId: "parser-b501a",
+    storageBucket: "parser-b501a.appspot.com",
+    messagingSenderId: "916388959591"
+  };
+firebase.initializeApp(config);
+
+const vk = new VK();
+vk.setToken('5fc38e0a5fc38e0a5fc38e0a125fa4650455fc35fc38e0a038255abdc43193b05fba5be') // токен приложения
+
+const filterFriends = (friends,req) => {
+  let filtered = [];
+    friends.forEach(x=> {
+      if (byCity(x,req) && bySex(x,req) && byAge(x,req)) filtered.push(x.id)
+    })
+    return filtered;
+}
+
+const byCity = (friend,req) => !req.query.city || ('city' in friend && friend.city.title === req.query.city);
+const bySex = (friend,req) => !req.query.sex || friend.sex == req.query.sex;
+const byAge = (friend,req) => {
+  if(!friend.bdate || /\d+.\d+.\d+/.test(friend.bdate)) return false; //Вернуть false,если отсутствует год рождения ,либо не соответсвует формтату 00.00.0000
+  if(!req.query.age) return true;
+  //Высчитываем возраст
+  let birthdate = new Date(friend.bdate),
+      cur = new Date(),
+      diff = cur-birthdate,
+      fullYears = Math.floor(diff/31557600000);
+
+  let ageFrom = req.query.age.split('-')[0] || 0 ,
+      ageTo = req.query.age.split('-')[1] || 999;
+
+      return (fullYears >= ageFrom && fullYears <= ageTo);
+}
+function getMembers25k(token,req, offset) {
+  console.log(`Запрос номер ${offset} начат.`)
+  console.log(arr[Math.floor((offset+1)*.1)])
+  const code =
+    `var offset = ${offset * 25000};
+     var newOffset = offset;
+     var members = [];
+     while (offset < (newOffset + 25000)){
+       var m = API.groups.getMembers({
+       "group_id": "${req.query.group_id}",
+       "count": "1000",
+       "offset": offset,
+       "fields": "sex, bdate, city"
+       }).items;
+       members.push(m);
+       offset = offset + 1000;
+     };
+     return members;`;
+  vk.setToken(token)
+  return vk.api.call('execute', { code })
+    .then(data => {
+      console.log(`Запрос номер ${offset} закончен.`)
+      return data.response
+    }).catch(err => console.error(err));
+}
+
+function flattenDeep(arr1) {
+   return arr1.reduce((acc, val) => Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+};
+
+exports.getMembers = functions.https.onRequest(async (req, res) => {
+  const members_count = await vk.api.call('groups.getMembers', {
+    group_id:req.query.group_id,
+    count: 0
+  }).then(res =>res.count);
+  const req_count = ~~(members_count / 25000) + 1;
+
+  const allTokens = await firebase.database()
+    .ref(`/vk_access_tokens`)
+    .once('value')
+    .then(res => res.val());
+
+  const promises = [];
+  for (let i = 0; i < req_count; i++) {
+    promises.push(getMembers25k(allTokens[i],req, i));
+  }
+
+  Promise.all(promises).then(data =>{
+    console.log('Запрос закончен.')
+    res.send(filterFriends(flattenDeep(data),req))
+});
