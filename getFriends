@@ -1,0 +1,44 @@
+//Формат запроса - http://localhost:3000/getFriends?user_id=110063054&city=Киров&sex=2&age=10-30
+const functions = require('firebase-functions');
+const firebase = require('firebase');
+const VK = require('vk-io'); //Версия 3.2
+
+const vk = new VK();
+vk.setToken('5fc38e0a5fc38e0a5fc38e0a125fa4650455fc35fc38e0a038255abdc43193b05fba5be')
+
+const filterFriends = (friends,req) => {
+  let filtered = [];
+  console.log(friends[0].sex)
+    friends.forEach(x=> {
+      if (byCity(x,req) && bySex(x,req) && byAge(x,req)) filtered.push(x.id)
+    })
+    return filtered;
+}
+
+const byCity = (friend,req) => !req.query.city || ('city' in friend && friend.city.title === req.query.city);
+const bySex = (friend,req) => !req.query.sex || friend.sex == req.query.sex;
+const byAge = (friend,req) => {
+  if(!friend.bdate || /\d+.\d+.\d+/.test(friend.bdate)) return false; //Вернуть false,если отсутствует год рождения ,либо не соответсвует формтату 00.00.0000
+  if(!req.query.age) return true;
+  //Высчитываем возраст
+  let birthdate = new Date(friend.bdate),
+      cur = new Date(),
+      diff = cur-birthdate,
+      fullYears = Math.floor(diff/31557600000);
+
+  let ageFrom = req.query.age.split('-')[0] || 0 ,
+      ageTo = req.query.age.split('-')[1] || 999;
+
+      return (fullYears >= ageFrom && fullYears <= ageTo);
+}
+
+exports.getFriends = functions.https.onRequest(async (req, res) => {
+  vk.api.friends.get({
+    user_id:req.query.user_id,
+    fields:'bdate,sex,city'
+  }).then(data=>{
+    let friends = filterFriends(data.items,req);
+    firebase.database().ref(`users/${req.query.user_id}/friends` ).set(friends);
+    res.send(`id друзей добавлены в базу ${friends}`)
+  }
+})
