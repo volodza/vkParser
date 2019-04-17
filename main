@@ -1,0 +1,49 @@
+const express = require('express'),
+      app = express(),
+      port = 3000,
+      request = require('request'),
+      firebase = require("firebase"),
+      getToken = require('./getToken'),
+      getFriends = require('./getFriends'),
+      getMembers = require('./vkeasy');
+      // VK = require('vk-io');
+//Настройки веб-приложения Firebase
+let config = {
+  apiKey: "AIzaSyCrOUoiPH9dVfAmVsHUAdJcdQA9Vi0cls4",
+    authDomain: "test-af206.firebaseapp.com",
+    databaseURL: "https://test-af206.firebaseio.com",
+    projectId: "test-af206",
+    storageBucket: "test-af206.appspot.com",
+    messagingSenderId: "892364363542"
+};
+firebase.initializeApp(config);
+//Настройки приложения VK
+let vkConfig = {
+    client_id:'6810382',
+    client_secret:'vorc5rvqtSaANez3O2Ec',
+    redirect_uri:'http://localhost:3000/getToken',
+    scope:'friends,groups,offline'
+};
+
+app.get('/getToken',(req,res) => {
+    getToken(req,res,vkConfig)
+    res.send('Токен успешно получен')
+})
+//Передавать в запросе user_id
+app.get('/getFriends',(req,res) => {
+    console.log('/getFriends')
+    getFriends(req,res)
+    res.send('ID друзей добавлены в БД')
+})
+//Передавать в запросе http://localhost:3000/getGroupMembers?group_ids=ogmif&user_id=82106886
+app.get('/getGroupMembers',(req,res) => {
+    getMembers(req,res)
+})
+
+
+app.listen(port, (err) => {
+    if (err) {
+        return console.log('something bad happened', err)
+    }
+    console.log(`server is listening on ${port}`)
+})
