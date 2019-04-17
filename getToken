@@ -1,0 +1,106 @@
+const express = require('express'),
+      app = express(),
+      port = 3000,
+      request = require('request'),
+      firebase = require("firebase");
+//Настройки веб-приложения Firebase
+let config = {
+  apiKey: "AIzaSyCrOUoiPH9dVfAmVsHUAdJcdQA9Vi0cls4",
+    authDomain: "test-af206.firebaseapp.com",
+    databaseURL: "https://test-af206.firebaseio.com",
+    projectId: "test-af206",
+    storageBucket: "test-af206.appspot.com",
+    messagingSenderId: "892364363542"
+};
+firebase.initializeApp(config);
+//Настройки VK приложения для запросов
+let vkConfig = {
+    client_id:'6810382',
+    client_secret:'vorc5rvqtSaANez3O2Ec',
+    redirect_uri:'http://localhost:3000/getToken',
+    scope:'friends,groups,offline'
+};
+
+app.get('/getToken', (req, res) => {
+  if(!req.query.code){
+    //console.log('получаю код')
+    getCode(req,res)
+  }else{
+  //  console.log('получаю токен')
+    getToken(req)
+    //console.log('токен получен')
+    res.end()
+  }
+})
+const getCode = (req,res) => {
+  res.redirect(`https://oauth.vk.com/authorize?client_id=6810382&display=page&redirect_uri=http://localhost:3000/getToken&scope=friends,offline&response_type=code&v=5.92`)
+}
+const getToken = (req) => {
+  console.log('запрос токена',req.query.code)
+  request({
+      method: 'GET',
+      url: 'https://oauth.vk.com/access_token',
+      qs: {
+          client_id : vkConfig.client_id,
+          client_secret : vkConfig.client_secret,
+          redirect_uri : vkConfig.redirect_uri,
+          code : req.query.code,
+          json : true
+        }
+ },(error, response, body) => {
+   //console.log(body)
+      token = JSON.parse(body)['access_token'];
+      user_id = JSON.parse(body)['user_id']
+      console.log(token)
+      // firebase.database().ref(`users/${user_id}/token` ).set(token);
+      // console.log(`Токен id${user_id} добавлен в базу`)
+  })
+  //console.log('конец запроса токена')
+}
+
+app.listen(port, (err) => {
+    if (err) {
+        return console.log('something bad happened', err)
+    }
+    console.log(`server is listening on ${port}`)
+})
+
+module.exports = (req,res,vkConfig) => {
+  const  request = require('request');
+  const firebase = require("firebase")
+
+  const getCode = (req,res) => {
+    res.redirect(`https://oauth.vk.com/authorize?client_id=${vkConfig.client_id}&display=page&redirect_uri=${vkConfig.redirect_uri}&scope=${vkConfig.scope}&response_type=code&v=5.92`)
+  }
+
+  const getToken = (req,vkConfig) => {
+    console.log('запрос токена',req.query.code)
+    request({
+        method: 'GET',
+        url: 'https://oauth.vk.com/access_token',
+        qs: {
+            client_id : vkConfig.client_id,
+            client_secret : vkConfig.client_secret,
+            redirect_uri : vkConfig.redirect_uri,
+            code : req.query.code,
+            json : true
+          }
+   },(error, response, body) => {
+     //console.log(body)
+        token = JSON.parse(body)['access_token'];
+        user_id = JSON.parse(body)['user_id']
+        firebase.database().ref(`users/${user_id}/token` ).set(token);
+        console.log(`Токен id${user_id} добавлен в базу`)
+    })
+    console.log('конец запроса токена')
+  }
+
+  if(!req.query.code){
+    console.log('получаю код')
+    getCode(req,res)
+  }else{
+    console.log('получаю токен')
+    getToken(req,vkConfig)
+    console.log('токен получен')
+  }
+};
