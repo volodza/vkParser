@@ -1,0 +1,11 @@
+  `var user_ids = [${user_ids}];
+     var friends = [];
+     var i = 0;
+     while(user_ids[i]){
+       var f = API.friends.get({
+         "user_id": user_ids[i]
+       }).items;
+       friends.push(f);
+       i=i+1;
+     };
+     return friends;`;
